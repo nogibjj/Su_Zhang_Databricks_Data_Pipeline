@@ -1,4 +1,4 @@
-
+[![CI](https://github.com/nogibjj/Su_Zhang_Databricks_Data_Pipeline/actions/workflows/cicd.yml/badge.svg)](https://github.com/nogibjj/Su_Zhang_Databricks_Data_Pipeline/actions/workflows/cicd.yml)
 
 # Su Zhang Data Pipeline Project
 
