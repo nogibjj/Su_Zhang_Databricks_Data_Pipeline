@@ -1,10 +1,14 @@
 # Databricks notebook source
-from pyspark.sql import SparkSession
+# Edited further so that this could pass CI/CD
+
 import pandas as pd
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, round, when
+
 
 def extract_load(
     url="https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/alcohol-consumption/drinks.csv",
-    filepath="data/sz324_drinks_delta", 
+    filepath="data/sz324_drinks_delta",
 ):
     """Extract to file path"""
     spark = SparkSession.builder.appName("Extract Data").getOrCreate()
@@ -12,25 +16,24 @@ def extract_load(
     df = pd.read_csv(url)
     print(df.head())
     pollingplaces_df = spark.createDataFrame(df)
-    
+
     if spark.catalog.tableExists("sz324_drinks_delta"):
         print("Table 'sz324_drinks_delta' already exists. Skipping append.")
     else:
         # Write to Delta table if it doesn't exist
-        pollingplaces_df.write.format("delta").mode("append").saveAsTable("sz324_drinks_delta")
+        pollingplaces_df.write.format("delta").mode("append").saveAsTable(
+            "sz324_drinks_delta"
+        )
         print("Dataframe saved to table")
 
     return filepath
-  
+
+
 extract_load()
-
-
 
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, round, when
 
 def transform_data():
     """Transform data by adding beer_percentage column and save to a new Delta table"""
@@ -48,19 +51,29 @@ def transform_data():
 
     # Add the beer_percentage column
     transformed_df = df.withColumn(
-    "beer_percentage",
-    round(
-        when(
-            (col("beer_servings") + col("wine_servings") + col("spirit_servings")) > 0,
-            col("beer_servings") / (col("beer_servings") + col("wine_servings") + col("spirit_servings"))
-        ).otherwise(None),
-        3
+        "beer_percentage",
+        round(
+            when(
+                (col("beer_servings") + col("wine_servings") + col("spirit_servings"))
+                > 0,
+                col("beer_servings")
+                / (
+                    col("beer_servings") + col("wine_servings") + col("spirit_servings")
+                ),
+            ).otherwise(None),
+            3,
+        ),
     )
-)
 
     # Write the transformed data to a new Delta table
-    transformed_df.write.format("delta").mode("overwrite").saveAsTable(target_table_name)
-    print(f"Transformed data with 'beer_percentage' column saved to table '{target_table_name}'")
+    transformed_df.write.format("delta").mode("overwrite").saveAsTable(
+        target_table_name
+    )
+    print(
+        f"Transformed data with 'beer_percentage' column "
+        f"saved to table '{target_table_name}'"
+    )
+
 
 # Transform the data
 transform_data()
@@ -68,9 +81,8 @@ transform_data()
 
 # COMMAND ----------
 
-from tabulate import tabulate
-
 LOG_FILE = "query_log.md"
+
 
 def log_query(query, result="none"):
     """adds to a query markdown file"""
@@ -80,6 +92,7 @@ def log_query(query, result="none"):
 
 
 def query_data(query):
+    spark = SparkSession.builder.appName("Query Data").getOrCreate()
     delta_table_name = "ids706_data_engineering.default.sz324_drinks_delta_transformed"
 
     log_query(query, result="Query received, executing query.")
@@ -87,12 +100,14 @@ def query_data(query):
     # Execute the query on the table
     result_df = spark.sql(query)
     pandas_df = result_df.toPandas()
-    result_str = pandas_df.to_markdown(index=False)  
+    result_str = pandas_df.to_markdown(index=False)
     log_query(query, result=result_str)
 
     return result_df
-  
-query_df = query_data(query="""
+
+
+query_df = query_data(
+    query="""
     SELECT 
         country,
         beer_servings,
@@ -107,6 +122,7 @@ query_df = query_data(query="""
     WHERE beer_percentage IS NOT NULL
     ORDER BY beer_percentage DESC
     LIMIT 20;
-    """)
+    """
+)
 
 query_df.head(20)
