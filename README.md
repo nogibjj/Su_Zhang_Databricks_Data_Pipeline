@@ -1,110 +1,195 @@
-[![CI](https://github.com/nogibjj/Su_Zhang_PySpark_Project/actions/workflows/cicd.yml/badge.svg)](https://github.com/nogibjj/Su_Zhang_PySpark_Project/actions/workflows/cicd.yml)
+# Su Zhang Data Pipeline Project
 
-# Su Zhang PySpark Project
-
-This project demonstrates how to build an **ETL (Extract, Transform, Load)** pipeline using **PySpark** for large dataset processing. The pipeline extracts data from a CSV file, transforms it by applying certain calculations, and loads it into a DataFrame for analysis. The project also includes unit tests to ensure the correctness of each function.
+This project demonstrates the implementation of an **ETL (Extract, Transform, Load) and Query pipeline within the Databricks environment**. The pipeline is developed using **PySpark**, extracting raw data, applying transformations, and storing the processed data in Delta Tables for efficient querying and analysis.
 
 ## Project Overview
 
-The goal of this project is to implement and test an ETL pipeline using PySpark. The ETL process is divided into three main steps:
+The ETL-Query pipeline includes the following steps:
+1. **Extract**: Raw data is extracted from online data source and saved in local file path.
+2. **Transform**: Data cleaning, formatting, and enrichment processes are applied using **PySpark** to make the data analysis-ready.
+3. **Load**: Both the raw data and the transformed data are stored in **Delta Table** within the Databricks environment.
+4. **Query**: The Delta Table serves as the foundation for running **SQL** queries and performing analysis efficiently.
 
-1. **Extract**: Fetch data from a remote source or a local file.
-2. **Transform**: Apply transformations to the data, such as calculating new columns or filtering data.
-3. **Load**: Load the transformed data into a DataFrame and prepare it for further analysis or processing.
+## Features
 
-### Key Features
-- **Data Extraction**: Fetch data from a remote source or a local CSV file.
-- **Data Transformation**: Apply operations such as filtering, aggregating, and calculating new columns.
-- **Data Loading**: Load data into a PySpark DataFrame for further analysis.
-- **Testing**: Unit tests to validate the ETL pipeline components, using `pytest` and PySpark.
+- **PySpark-Based ETL**: Uses PySpark for scalable and efficient data processing.
+- **Delta Lake Integration**: Utilizes Delta Tables for versioned, ACID-compliant storage and fast querying.
+- **Scalable Processing**: Leverages Databricks' distributed computing capabilities for large datasets.
+- **SQL and PySpark Compatibility**: Supports SQL queries and Python-based transformations for flexibility.
+
 
 ## Project Structure
 
 ```plaintext
-PySpark_ETL_Project/
+Databricks_Data_Project/
 │
-├── mylib/                    # Contains the core logic for ETL process
-│   ├── calculator.py          # Contains ETL functions (extract, transform, load, etc.)
-│   └── __init__.py
+├── Databricks_Data_Pipeline   # Exported Databricks notebook (in Python Script format)
 │
-├── data/                     # Folder containing raw data files (e.g., drinks.csv)
+├── data/                      # Folder containing raw data files (e.g., drinks.csv)
 │   └── drinks.csv
 │
-├── tests/                    # Unit tests for the ETL pipeline
-│   └── test_main.py           # Test file for the ETL pipeline
+├── query_log.md               # Exported Databricks query log from running notebook
 │
-├── README.md                 # Project description
-├── requirements.txt          # List of dependencies
-└── main.py                   # Main entry point for running the pipeline
+├── README.md                  # Project description
+├── requirements.txt           # List of dependencies
+└── Makefile                   
 ```
 
-## Requirements
 
-Before you begin, ensure you have the following installed:
+## Getting Started
 
-- **PySpark**: The main library for working with Spark in Python.
-- **pytest**: For running the unit tests.
+### 1. Create a Personal Cluster
+   - Navigate to the **Compute** tab in your Databricks workspace.
+   - Click **Create Cluster** and provide the necessary configurations:
+     - Choose a Spark version compatible with Delta Lake and PySpark.
+     - Set the maximum runtime of cluster to managable period.
 
-### Install Dependencies
 
-You can install the required dependencies by running the following command in terminal:
+   ![image](./pics/PersonalCompute.png)
+   
+---
 
-```bash
-make install
+### 2. Create Databricks Notebook
+Create a new notebook in Databricks and implement the ETL pipeline as follows:
+
+### Extract Data
+
+* Load raw data into a Spark DataFrame and saved as delta table in catalog for processing:
+
+```python
+from pyspark.sql import SparkSession
+import pandas as pd
+
+def extract_load(
+    url="https://raw.githubusercontent.com/fivethirtyeight/data/refs/heads/master/alcohol-consumption/drinks.csv",
+    filepath="data/sz324_drinks_delta", 
+):
+    """Extract to file path"""
+    spark = SparkSession.builder.appName("Extract Data").getOrCreate()
+
+    df = pd.read_csv(url)
+    print(df.head())
+    pollingplaces_df = spark.createDataFrame(df)
+    
+    if spark.catalog.tableExists("sz324_drinks_delta"):
+        print("Table 'sz324_drinks_delta' already exists. Skipping append.")
+    else:
+        # Write to Delta table if it doesn't exist
+        pollingplaces_df.write.format("delta").mode("append").saveAsTable("sz324_drinks_delta")
+        print("Dataframe saved to table")
+
+    return filepath
 ```
 
-Alternatively, you can manually install the dependencies using:
+### Transform Data
 
-```bash
-pip install pyspark
+* Transform data by adding beer_percentage column and save to a new Delta Table
+
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, round, when
+
+def transform_data():
+    """Transform data by adding beer_percentage column and save to a new Delta table"""
+    # Initialize Spark session
+    spark = SparkSession.builder.appName("Transform Data").getOrCreate()
+
+    # Define the source Delta table
+    source_table_name = "ids706_data_engineering.default.sz324_drinks_delta"
+
+    # Define the target Delta table
+    target_table_name = "ids706_data_engineering.default.sz324_drinks_delta_transformed"
+
+    # Read the source Delta table
+    df = spark.table(source_table_name)
+
+    # Add the beer_percentage column
+    transformed_df = df.withColumn(
+    "beer_percentage",
+    round(
+        when(
+            (col("beer_servings") + col("wine_servings") + col("spirit_servings")) > 0,
+            col("beer_servings") / (col("beer_servings") + col("wine_servings") + col("spirit_servings"))
+        ).otherwise(None),
+        3
+    )
+)
+
+    # Write the transformed data to a new Delta table
+    transformed_df.write.format("delta").mode("overwrite").saveAsTable(target_table_name)
+    print(f"Transformed data with 'beer_percentage' column saved to table '{target_table_name}'")
 ```
 
-## Setup Instructions
+### Query the Delta Table
+Run SQL queries directly on the Delta Table to perform analysis:
 
-1. **Run on codespace** or **Clone the Repository**:
+```python
+def query_data(query):
+    delta_table_name = "ids706_data_engineering.default.sz324_drinks_delta_transformed"
 
-   * Open codespace and wait for the environment to set up
+    log_query(query, result="Query received, executing query.")
+    print(f"Executing SQL query on table {delta_table_name}")
+    # Execute the query on the table
+    result_df = spark.sql(query)
+    pandas_df = result_df.toPandas()
+    result_str = pandas_df.to_markdown(index=False)  
+    log_query(query, result=result_str)
 
-   * Clone this repository to your local machine.
+    return result_df
+```
 
-   ```bash
-   git clone https://github.com/nogibjj/Su_Zhang_PySpark_Project.git
-   ```
+```sql
+    SELECT 
+        country,
+        beer_servings,
+        wine_servings,
+        spirit_servings,
+        beer_percentage,
+        CASE 
+            WHEN beer_percentage > 0.5 THEN 'High Beer Consumption'
+            ELSE 'Moderate/Low Beer Consumption'
+        END AS beer_consumption_category
+    FROM ids706_data_engineering.default.sz324_drinks_delta_transformed
+    WHERE beer_percentage IS NOT NULL
+    ORDER BY beer_percentage DESC
+    LIMIT 20;
+```
 
-2. **Prepare the Data**:
+### 3. Run the Notebook to Test
 
-   Ensure that the `data/drinks.csv` file exists in the `data/` directory.
+* You can see both raw and transformed data are saved as delta table in the catalog
+
+   ![image](./pics/DeltaTable.png)
+
+* The data source indicated should be `Delta`
+   ![image](./pics/DrinksDeltaTable.png)
+
+   ![image](./pics/TransformedDeltaTable.png)   
+
+### 4. Create a Databricks Job to Run the Pipeline
+
+* Create three tasks of `extract_load`, `transform` and `query` in one job 
+* Add dependicies with requirements.txt that should include all the required dependencies
+* Run with your personal compute
+
+   ![image](./pics/DatabricksJobRun.png)
 
 
-3. **Running the ETL Pipeline**:
+## Benefits of Using PySpark and Delta Tables
 
-   To run the ETL pipeline, use the following command:
-
-   ```bash
-   python main.py
-   ```
-
-   This will execute the ETL process, performing the following:
-   - Extract the data from `data/drinks.csv`.
-   - Apply the transformation (e.g., calculate `beer_percentage`).
-   - Load the data into a PySpark DataFrame and display the results.
-
-4. **Running Unit Tests**:
-
-   You can run the unit tests to ensure that all functions are working as expected. To do so, use `pytest`:
-
-   ```bash
-   pytest test_main.py
-   ```
-
-   This will run all the test functions and provide a report of passed/failed tests.
+- **PySpark**: Provides scalable data processing capabilities for large datasets.
+- **Delta Tables**:
+  - **Data Versioning**: Supports time travel to view previous states of data.
+  - **Optimized Query Performance**: Indexing and caching enable faster queries.
+  - **ACID Transactions**: Ensures consistency and reliability in data operations.
 
 ## Logged Output
 
-The logged markdown file could be found [here](https://github.com/nogibjj/Su_Zhang_PySpark_Project/blob/main/pyspark_process.md).
+The logged markdown file could be found [here](https://github.com/nogibjj/Su_Zhang_Databricks_Data_Pipeline/blob/main/query_log.md).
 
-## References
+## References and Data Source
 
+* https://github.com/fivethirtyeight/data/tree/master/alcohol-consumption
 * https://github.com/nogibjj/python-ruff-template
 
 
